@@ -13,6 +13,9 @@ import gzip
 import skimage
 import cv2
 
+
+params_dir = "params"
+
 def save_image(filename, img):
     scipy.misc.imsave(filename, img.reshape(c.height, c.width))
 
@@ -53,7 +56,7 @@ def dt(image, sigma = 5):
     return gaussian_filter(img, sigma).reshape(1, c.height, c.width)
 
 
-def load_data(val_pct = 0.1, cv=0, dtbased=False, seed = 1234, first=0, datadir='train', only_names=True):
+def load_data(val_pct = 0.1, fold=0, dtbased=False, seed = 1234, first=0, datadir='train', only_names=True):
     mask_names = glob.glob(datadir+'/*_mask.tif')
     subjects = uniq([i.split("/")[1].split("_")[0] for i in mask_names])
     if first>0:
@@ -66,8 +69,8 @@ def load_data(val_pct = 0.1, cv=0, dtbased=False, seed = 1234, first=0, datadir=
     # train subjects
     num_subjects[1] = len(subjects) - num_subjects[0]
 
-    if cv > 0:
-        sind = num_subjects[0] * (cv-1)
+    if fold > 0:
+        sind = num_subjects[0] * (fold-1)
         lind = sind + num_subjects[0] 
         if lind > len(subjects):
             sub = lind - len(subjects)
@@ -123,97 +126,6 @@ def load_data(val_pct = 0.1, cv=0, dtbased=False, seed = 1234, first=0, datadir=
 
 
 
-def augment_image(image, label):
-    aug_params = {
-        'zoom_range': (1/(1+c.scale), 1+c.scale),
-        'rotation_range': (-c.rotation, c.rotation),
-        'shear_range': (-c.shear, c.shear),
-        'translation_range': (-c.shift, c.shift),
-        'do_flip': c.flip,
-        'allow_stretch': c.stretch,
-        'elastic_warps_dir':c.elastic_warps_dir,
-        'alpha': c.alpha,
-        'sigma': c.sigma,
-    }
-    if c.elastic:
-        [ image, label ] = aug.elastic_transform(image, label, aug_params)
-    if c.non_elastic:
-        [ image, label ] = aug.perturb(image, label, aug_params)
-    # elif c.data_based:
-    #     [ image, label ] = augment_image_data_based(image, label, c.warps_dir)
-
-    return [ image, label] 
-
-
-def tta(img, predict_model):
-    aug_params = {
-        'zoom_range': (1/(1+c.scale), 1+c.scale),
-        'rotation_range': (-c.rotation, c.rotation),
-        'shear_range': (-c.shear, c.shear),
-        'translation_range': (-c.shift, c.shift),
-        'do_flip': c.flip,
-        'allow_stretch': c.stretch,
-        'elastic_warps_dir':c.elastic_warps_dir,
-        'alpha': c.alpha,
-        'sigma': c.sigma,
-    }
-    tform_centering = aug.build_centering_transform(img.shape[2:], None)
-    tform_center, tform_uncenter = aug.build_center_uncenter_transforms(img.shape[2:])
-    tform_augment = aug.random_perturbation_transform(aug_params)
-    tform_augment = tform_centering + tform_uncenter + tform_augment + tform_center # shift to center, augment, shift back (for the rotation/shearing)
-    nimg = img+0
-    nimg[0] = aug.fast_warp(img[0], tform_augment, output_shape=None, mode='constant')
-    pred = predict_model(nimg)
-    tform_augment.params=np.linalg.inv(tform_augment.params)
-    nimg[0] = aug.fast_warp(pred[0], tform_augment, output_shape=None, mode='constant')
-    return nimg
-
-
-def tta2(img, predict_model, num, shape):
-    aug_params = {
-        'zoom_range': (1/(1+c.scale), 1+c.scale),
-        'rotation_range': (-c.rotation, c.rotation),
-        'shear_range': (-c.shear, c.shear),
-        'translation_range': (-c.shift, c.shift),
-        'do_flip': c.flip,
-        'allow_stretch': c.stretch,
-        'elastic_warps_dir':c.elastic_warps_dir,
-        'alpha': c.alpha,
-        'sigma': c.sigma,
-    }
-    tform_centering = aug.build_centering_transform(img.shape[2:], None)
-    tform_center, tform_uncenter = aug.build_center_uncenter_transforms(img.shape[2:])
-
-    images = np.zeros((num, 1, img.shape[2], img.shape[3]), dtype='float32')
-    augments = []
-    for i in range(num):
-        if i == 0:
-            images[i] = img
-            augments.append(None)
-        else:
-            tform_augment = aug.random_perturbation_transform(aug_params)
-            tform_augment = tform_centering + tform_uncenter + tform_augment + tform_center # shift to center, augment, shift back (for the rotation/shearing)
-            images[i][0] = aug.fast_warp(img[0], tform_augment, output_shape=None, mode='constant')
-            augments.append(tform_augment)
-
-    preds = predict_model(images)
-    pred = np.zeros(shape, dtype='float32')
-    for i in range(num):
-        if i == 0:
-            cur_pred = preds[i]
-        else:
-            tform_augment = augments[i]
-            tform_augment.params=np.linalg.inv(tform_augment.params)
-            cur_pred = aug.fast_warp(preds[i], tform_augment, output_shape=None, mode='constant')
-
-        if shape != img.shape:
-            cur_pred = cv2.resize(cur_pred[0], (shape[3], shape[2]), interpolation=cv2.INTER_LINEAR)
-            cur_pred = cur_pred.reshape( (shape[1],shape[2],shape[3]) )
-        pred[0] += cur_pred
-
-    pred/=num
-    return pred
-
 
 # import cv2
 # warp_dir_contents = []
@@ -229,26 +141,6 @@ def tta2(img, predict_model, num, shape):
 #     return image, label
 
 
-def generate_elastic_warps(times, alpha=c.alpha, sigma=c.sigma, elastic_warps_dir=c.elastic_warps_dir):    
-    if not os.path.exists(elastic_warps_dir):
-        os.makedirs(elastic_warps_dir)
-        next = 0
-    else:
-        elastic_dir_contents = glob.glob(elastic_warps_dir+'/*pklz')
-        next = len(elastic_dir_contents)
-    
-    for i in range(next, next+times):
-        alpha = np.random.uniform(alpha)
-        shape = (c.height, c.width)
-        dx = gaussian_filter((np.random.rand(*shape) * 2 - 1), sigma, mode="constant", cval=0) * alpha
-        dy = gaussian_filter((np.random.rand(*shape) * 2 - 1), sigma, mode="constant", cval=0) * alpha
-        x, y = np.meshgrid(np.arange(shape[1]), np.arange(shape[0]))
-        indices = np.reshape(y+dy, (-1, 1)), np.reshape(x+dx, (-1, 1)).astype(np.float32)
-
-        fn = elastic_warps_dir+"/"+str(i)+".pklz"
-        f = gzip.open(fn,'wb')
-        pickle.dump(indices,f)
-        f.close()
 
 def uniq(input):
   output = []
@@ -271,44 +163,35 @@ def sort_nicely(l):
 
 
 
-def get_params_dir(version, autoencoder=False, cv=0, seed=1234):
+def get_params_dir(version, autoencoder=False, fold=0, seed=1234):
     suffix = "" if not autoencoder else "-autoencoder"
     suffix = suffix 
-    if cv > 0:
-        suffix ="{}/cv{}".format(suffix, cv)
+    if fold > 0:
+        suffix ="{}/fold{}".format(suffix, fold)
     else:
         suffix ="{}/seed{}".format(suffix, seed)
     return os.path.join(c.params_dir, 'v{}{}'.format(version, suffix))
 
 
-def completed(version, cv=0, seed=1234):
+def resume(model = None, version, autoencoder=False, fold=0, seed=1234):
     epoch = -1
     batch = 0
-    fn = get_params_dir(version, cv=cv, seed=seed)+'/checkpoint.pickle'
+    fn = get_params_dir(version, autoencoder=autoencoder, fold=fold, seed=seed)+'/checkpoint.pickle'
     if os.path.isfile(fn):
         with open(fn, 'rb') as re:
             [param_vals, epoch, batch] = pickle.load(re)
-    return [epoch, batch]
-
-
-def resume(model, version, autoencoder=False, cv=0, seed=1234):
-    epoch = -1
-    batch = 0
-    fn = get_params_dir(version, autoencoder=autoencoder, cv=cv, seed=seed)+'/checkpoint.pickle'
-    if os.path.isfile(fn):
-        with open(fn, 'rb') as re:
-            [param_vals, epoch, batch] = pickle.load(re)
-            import lasagne
-            lasagne.layers.set_all_param_values(model, param_vals)
+            if model is not None:
+                import lasagne
+                lasagne.layers.set_all_param_values(model, param_vals)
     else:
         epoch = load_last_params(model, version) + 1
-    [mve, train_error, val_error, val_accuracy] = load_results(version, cv=cv)
+    [mve, train_error, val_error, val_accuracy] = load_results(version, fold=fold)
     return [epoch, batch, mve, train_error, val_error, val_accuracy]
 
 
-def save_progress(model, version, epoch, batch, autoencoder=False, cv=0, seed=1234):
+def save_progress(model, version, epoch, batch, autoencoder=False, fold=0, seed=1234):
     suffix = "" if not autoencoder else "-autoencoder"
-    fn = get_params_dir(version, autoencoder=autoencoder, cv=cv, seed=seed)+'/checkpoint.pickle'
+    fn = get_params_dir(version, autoencoder=autoencoder, fold=fold, seed=seed)+'/checkpoint.pickle'
     if not os.path.exists(os.path.dirname(fn)):
         os.makedirs(os.path.dirname(fn))
     import lasagne
@@ -318,30 +201,30 @@ def save_progress(model, version, epoch, batch, autoencoder=False, cv=0, seed=12
         pickle.dump(stuff, wr)
 
 
-def load_results(version, autoencoder=False, cv=0, seed=1234):
+def load_results(version, autoencoder=False, fold=0, seed=1234):
     mve = None
     train_error = {} 
     val_error = {}
     val_accuracy = {}
-    fn = get_params_dir(version, autoencoder=autoencoder, cv=cv, seed=seed)+'/results.pickle'
+    fn = get_params_dir(version, autoencoder=autoencoder, fold=fold, seed=seed)+'/results.pickle'
     if os.path.isfile(fn):
         with open(fn, 'rb') as re:
             [mve, train_error, val_error, val_accuracy] = pickle.load(re)
     return [mve, train_error, val_error, val_accuracy]
 
 
-def save_results(version, mve, train_error, val_error, val_accuracy, autoencoder=False, cv=0, seed=1234):
-    fn = get_params_dir(version, autoencoder=autoencoder, cv=cv, seed=seed)+'/results.pickle'
+def save_results(version, mve, train_error, val_error, val_accuracy, autoencoder=False, fold=0, seed=1234):
+    fn = get_params_dir(version, autoencoder=autoencoder, fold=fold, seed=seed)+'/results.pickle'
     if not os.path.exists(os.path.dirname(fn)):
         os.makedirs(os.path.dirname(fn))
     with open(fn, 'wb') as wr:
         pickle.dump([mve, train_error, val_error, val_accuracy], wr)
 
 
-def load_last_params(model, version, best=False, autoencoder=False, cv=0, seed=1234):
-    fn = get_params_dir(version, autoencoder=autoencoder, cv=cv, seed=seed)+'/params_e*.npz'
+def load_last_params(model, version, best=False, autoencoder=False, fold=0, seed=1234):
+    fn = get_params_dir(version, autoencoder=autoencoder, fold=fold, seed=seed)+'/params_e*.npz'
     if best:
-        fn = get_params_dir(version, autoencoder=autoencoder, cv=cv, seed=seed)+'/params_best_e*.npz'
+        fn = get_params_dir(version, autoencoder=autoencoder, fold=fold, seed=seed)+'/params_best_e*.npz'
     param_names = glob.glob( fn )
     if len(param_names) == 0:
         return -1
@@ -359,10 +242,10 @@ def load_params(model, fn):
     lasagne.layers.set_all_param_values(model, param_values)
 
 
-def save_params(model, version, epoch, best=False, autoencoder=False, cv=0, seed=1234):
-    fn = get_params_dir(version, autoencoder=autoencoder, cv=cv, seed=seed)+'/params_e{}.npz'.format(epoch)
+def save_params(model, version, epoch, best=False, autoencoder=False, fold=0, seed=1234):
+    fn = get_params_dir(version, autoencoder=autoencoder, fold=fold, seed=seed)+'/params_e{}.npz'.format(epoch)
     if best:
-        fn = get_params_dir(version, autoencoder=autoencoder, cv=cv, seed=seed)+'/params_best_e{}.npz'.format(epoch) 
+        fn = get_params_dir(version, autoencoder=autoencoder, fold=fold, seed=seed)+'/params_best_e{}.npz'.format(epoch) 
     if not os.path.exists(os.path.dirname(fn)):
         os.makedirs(os.path.dirname(fn))
     import lasagne

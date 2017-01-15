@@ -1,12 +1,20 @@
-models_dir = "models"
-params_dir = "params"
+modelversion = 0
+depth = 6
+filters = 8
+filter_size = 3
+regularization = 0
+resize = 0
+learning_rate = [3e-3 3e-3]
 
-data_filename = 'data.npz'
+train_loss = 'dice'
+val_loss = 'dice'
+
 height = 420
 width = 580
 batch_size = 25
 num_epochs = 100
 
+augment = True
 elastic = False
 alpha = 100
 sigma = 4
@@ -21,6 +29,7 @@ color_noise = 0;
 crop = None
 flip = False
 stretch = True
+
 
 # data_based = False
 # warps_dir = 'warps/pass'

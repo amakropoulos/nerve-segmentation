@@ -16,7 +16,6 @@ def version_parameters(version):
     datadir = 'train'
     drop = False
     augment = 0.0
-    dtbased = False
     shift = False
     nonlinearity=lasagne.nonlinearities.sigmoid
 
@@ -33,10 +32,6 @@ def version_parameters(version):
         drop=True
     elif subversion == 5:
         augment=True
-        dtbased=True
-    
-    if dtbased:
-        nonlinearity = None
 
     modelversion = round(modelversion//1)
 
@@ -47,11 +42,10 @@ def version_parameters(version):
     print("datadir: "+str(datadir))
     print("augment: "+str(augment))
     print("shift: "+str(shift))
-    print("dtbased: "+str(dtbased))
     print("drop: "+str(drop))
     print()
 
-    return modelversion, dtbased, datadir, drop, augment, shift, nonlinearity
+    return modelversion, datadir, drop, augment, shift, nonlinearity
 
 
 
@@ -159,7 +153,7 @@ def zero_out_network(input_var, shape, version=0, drop=False, nonlinearity=lasag
 
 
 
-def network(input_var, shape, version=0, drop=False, nonlinearity=lasagne.nonlinearities.sigmoid, filter_size=3, num_filters=8, depth=6, print_net=True):
+def network(input_var, shape, version=0, filter_size=3, num_filters=8, depth=6, print_net=True):
     net = {}
     net['input'] = network = InputLayer(shape, input_var)
 

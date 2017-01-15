@@ -120,7 +120,45 @@ def perturb_fixed(img, label, tform_augment, target_shape=None):
     label = fast_warp(label, tform_centering + tform_augment, output_shape=target_shape, mode='constant')
     return [img, label]
 
-#fancy PCA
+
+
+def test_time_augmentation(img, predict_model, num, shape, augmentation_params):
+    tform_centering = build_centering_transform(img.shape[2:], None)
+    tform_center, tform_uncenter = build_center_uncenter_transforms(img.shape[2:])
+
+    images = np.zeros((num, 1, img.shape[2], img.shape[3]), dtype='float32')
+    augments = []
+    for i in range(num):
+        if i == 0:
+            images[i] = img
+            augments.append(None)
+        else:
+            tform_augment = random_perturbation_transform(augmentation_params)
+            tform_augment = tform_centering + tform_uncenter + tform_augment + tform_center # shift to center, augment, shift back (for the rotation/shearing)
+            images[i][0] = fast_warp(img[0], tform_augment, output_shape=None, mode='constant')
+            augments.append(tform_augment)
+
+    preds = predict_model(images)
+    pred = np.zeros(shape, dtype='float32')
+    for i in range(num):
+        if i == 0:
+            cur_pred = preds[i]
+        else:
+            tform_augment = augments[i]
+            tform_augment.params=np.linalg.inv(tform_augment.params)
+            cur_pred = fast_warp(preds[i], tform_augment, output_shape=None, mode='constant')
+
+        if shape != img.shape:
+            cur_pred = cv2.resize(cur_pred[0], (shape[3], shape[2]), interpolation=cv2.INTER_LINEAR)
+            cur_pred = cur_pred.reshape( (shape[1],shape[2],shape[3]) )
+        pred[0] += cur_pred
+
+    pred/=num
+    return pred
+
+
+
+# fancy PCA
 U = np.array([[-0.60,0.55,0.58],
     [-0.60,0.17,-0.77],
     [-0.53,-0.82,0.23]],dtype = np.float32);
@@ -133,6 +171,14 @@ def augment_color(img, sigma=0.3):
     alpha = color_vec.astype(np.float32) * EV
     noise = np.dot(U, alpha.T)
     return img + noise[:, np.newaxis, np.newaxis]
+
+
+def augment(image, label, augmentation_params):
+    if augmentation_params['elastic']:
+        [ image, label ] = elastic_transform(img, lbl, augmentation_params)
+    if augmentation_params['non_elastic']:
+        [ image, label ] = perturb(img, lbl, augmentation_params)
+    return [image, label]
 
 
 from scipy.ndimage.interpolation import map_coordinates
@@ -174,6 +220,32 @@ def elastic_transform(image, label, augmentation_params, random_state=None):
         resimage[i] = map_coordinates(image[i], indices, order=1).reshape(shape)
         reslabel[i] = map_coordinates(label[i], indices, order=1, mode='nearest').reshape(shape)
     return [resimage, reslabel];
+
+
+
+
+def generate_elastic_warps(times, alpha, sigma, elastic_warps_dir):    
+    if not os.path.exists(elastic_warps_dir):
+        os.makedirs(elastic_warps_dir)
+        next = 0
+    else:
+        elastic_dir_contents = glob.glob(elastic_warps_dir+'/*pklz')
+        next = len(elastic_dir_contents)
+    
+    for i in range(next, next+times):
+        alpha = np.random.uniform(alpha)
+        shape = (c.height, c.width)
+        dx = gaussian_filter((np.random.rand(*shape) * 2 - 1), sigma, mode="constant", cval=0) * alpha
+        dy = gaussian_filter((np.random.rand(*shape) * 2 - 1), sigma, mode="constant", cval=0) * alpha
+        x, y = np.meshgrid(np.arange(shape[1]), np.arange(shape[0]))
+        indices = np.reshape(y+dy, (-1, 1)), np.reshape(x+dx, (-1, 1)).astype(np.float32)
+
+        fn = elastic_warps_dir+"/"+str(i)+".pklz"
+        f = gzip.open(fn,'wb')
+        pickle.dump(indices,f)
+        f.close()
+
+
 
 def load_augment(fname, w, h, aug_params=no_augmentation_params,
                  transform=None, sigma=0.0, color_vec=None):

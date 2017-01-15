@@ -12,6 +12,7 @@ import argparse
 import glob
 from skimage import measure
 import cv2
+import img_augmentation as aug
 # from scipy.ndimage.morphology import binary_dilation
 # from scipy.ndimage import gaussian_filter
 
@@ -146,7 +147,7 @@ def test_model(version=0, depth=6, filters=8, testdir='test', submitdir='submit'
                 img = img.reshape(shape)
 
             if tta_num>1:
-                pred = misc.tta2(img, predict_model, tta_num, orig_shape)
+                pred = aug.test_time_augmentation(img, predict_model, tta_num, orig_shape)
             else:
                 pred = predict_model(img)
                 if resize:
