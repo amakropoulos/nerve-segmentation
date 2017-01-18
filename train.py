@@ -18,10 +18,6 @@ import img_augmentation as aug
 # from skimage import measure
 # import glob
 
-data_dir = 'train'
-params_dir = 'params'
-
-
 # print available GPU memory
 def print_GPU_memory():
     import theano.sandbox.cuda.basic_ops as sbcuda
@@ -40,22 +36,6 @@ def add_regularization(network):
             penalty_layers.append(l)
     return reg.regularize_layer_params(penalty_layers, reg.l2)
 
-
-# load config file
-def load_config(model_config)
-    c = getattr(__import__(model_config))
-    c.aug_params = {
-        'use': c.augment
-        'zoom_range': (1/(1+c.scale), 1+c.scale),
-        'rotation_range': (-c.rotation, c.rotation),
-        'shear_range': (-c.shear, c.shear),
-        'translation_range': (-c.shift, c.shift),
-        'do_flip': c.flip,
-        'allow_stretch': c.stretch,
-        'elastic_warps_dir':c.elastic_warps_dir,
-        'alpha': c.alpha,
-        'sigma': c.sigma,
-    }
 
 # load batch and apply augmentation
 def getbatch(inputs, targets, shape, batchsize, aug_params, shuffle=False, seed=-1, init_batch=0, augment=False, resize=0):
@@ -90,20 +70,16 @@ def getbatch(inputs, targets, shape, batchsize, aug_params, shuffle=False, seed=
         yield Xs[0:d,:,:,:], ys[0:d,:,:,:]
 
 # train the model
-def train_model(version=0, fold=1, num_folds=10, seed=1234):
+def train_model(version=0, train_dir = 'train', fold=1, num_folds=10, seed=1234):
     # completed?
-    completed = params_dir+"/v"+version+"/completed"
-    if os.path.isfile(completed):
-        with open(completed, 'r') as rf:
-            print("best score: "+rf.readline())
+    if misc.completed(version, fold, seed): return;
 
     # load model config 
-    model_config = params_dir+"/v"+version+"/config.py"
-    c = load_config(model_config)
+    c = misc.load_config(version)
 
     # define image shape (original or resized)
     batch_size = c.batch_size
-    if resize != 0:
+    if c.resize != 0:
         shape = (None, 1, round(c.height*c.resize), round(c.width*c.resize) ) 
     else:
         shape = (None, 1, c.height, c.width)
@@ -111,13 +87,13 @@ def train_model(version=0, fold=1, num_folds=10, seed=1234):
     # load data
     print("Loading data..")
     start_time = time.clock()   
-    X_train, y_train, X_val, y_val = misc.load_data(val_pct=1/num_folds, datadir=data_dir, fold=fold, seed=seed)
+    X_train, y_train, X_val, y_val = misc.load_data(val_pct=1/num_folds, datadir=train_dir, fold=fold, seed=seed)
     print("took " + str(time.clock()-start_time )+"s")
 
     # build network
     input_var = T.tensor4('input')
     label_var = T.tensor4('label')
-    net = model.network(input_var, shape, filter_size=c.filter_size, version=c.modelversion, depth=c.depth, num_filters=c.filters)
+    net = model.network(input_var, shape, filter_size=c.filter_size, version=c.modelversion, depth=c.depth, num_filters=c.filters, autoencoder=c.autoencoder, autoencoder_dropout=c.autoencoder_dropout)
     output = lasagne.layers.get_output(net['output'])
     output_det = lasagne.layers.get_output(net['output'], deterministic=True)
 
@@ -151,6 +127,11 @@ def train_model(version=0, fold=1, num_folds=10, seed=1234):
     # resume from epoch, batch
     print("Starting training...")
     [init_epoch, init_batch, mve, train_error, val_error, val_accuracy] = misc.resume(version, net['output'], fold=fold, seed=seed)
+    if c.pretrain!=0 and init_epoch == 0 and init_batch == 0:
+        print("load params from network: "+str(c.pretrain))
+        prenet =  deepcopy(net)
+        misc.load_last_params(prenet['output'], c.pretrain, best=True)
+        model.match_net_params(anet, net)
     print("init epoch: "+str(init_epoch+1) + " batch: "+str(init_batch) +" best result: " +str(mve))
 
     for epoch in range(init_epoch, c.num_epochs):
@@ -210,8 +191,7 @@ def train_model(version=0, fold=1, num_folds=10, seed=1234):
         print("  validation loss:\t\t{:.6f}\t{:.6f}\t\t\t\t{:.6f}".format(val_error[epoch], mve, val_error[epoch]/train_error[epoch] ), flush=True)
         print("  validation accuracy:\t\t{:.2f} %".format(val_accuracy[epoch]),flush=True)
 
-    with open(completed, 'w') as wf:
-         wf.write(str(mve))
+        misc.finish(version, mve, fold, seed)
 
 
 
@@ -228,6 +208,7 @@ def main():
     parser.add_argument("-cvinv", dest="cvinv",  help="cvinv", default=0) 
     parser.add_argument("-fold", dest="fold",  help="fold", default=0) 
     parser.add_argument("-seed", dest="seed",  help="seed", default=1234)
+    parser.add_argument("-train", dest="train",  help="train", default="train")
     options = parser.parse_args()
 
     version = int(options.version)
@@ -235,6 +216,7 @@ def main():
     cv = int(options.cv)
     cvinv = int(options.cvinv)
     fold = int(options.fold)
+    train_dir = options.train
 
 
     print("Arguments:")
@@ -263,7 +245,7 @@ def main():
 
     for fold in range(ifold, lfold, step):
         print("cv fold "+str(fold)+"\n")
-        train_model(version = version, fold = fold, num_folds = num_folds, seed=seed)
+        train_model(version = version, train_dir=train_dir, fold = fold, num_folds = num_folds, seed=seed)
 
 
 if __name__ == '__main__':

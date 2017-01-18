@@ -1,6 +1,8 @@
 import skimage
 import skimage.transform
 from skimage.transform._warps_cy import _warp_fast
+from scipy.ndimage.interpolation import map_coordinates
+from scipy.ndimage.filters import gaussian_filter
 import numpy as np
 import pickle
 import glob
@@ -100,6 +102,8 @@ def random_perturbation_transform(augmentation_params, rng=np.random):
 
     return build_augmentation_transform((zoom_x, zoom_y), rotation, shear, translation, flip)
 
+# do the augmentation
+# if rng is None, it can be used for test-time augmentation
 def perturb(img, label, augmentation_params, target_shape=None, rng=np.random):
     shape = img.shape[1:]
     tform_centering = build_centering_transform(shape, target_shape)
@@ -110,18 +114,7 @@ def perturb(img, label, augmentation_params, target_shape=None, rng=np.random):
     label = fast_warp(label, tform_centering + tform_augment, output_shape=target_shape, mode='constant')
     return [img, label]
 
-# for test-time augmentation
-def perturb_fixed(img, label, tform_augment, target_shape=None):
-    shape = img.shape[1:]
-    tform_centering = build_centering_transform(shape, target_shape)
-    tform_center, tform_uncenter = build_center_uncenter_transforms(shape)
-    tform_augment = tform_uncenter + tform_augment + tform_center # shift to center, augment, shift back (for the rotation/shearing)
-    img = fast_warp(img, tform_centering + tform_augment, output_shape=target_shape, mode='constant')
-    label = fast_warp(label, tform_centering + tform_augment, output_shape=target_shape, mode='constant')
-    return [img, label]
-
-
-
+# augmentation at test time
 def test_time_augmentation(img, predict_model, num, shape, augmentation_params):
     tform_centering = build_centering_transform(img.shape[2:], None)
     tform_center, tform_uncenter = build_center_uncenter_transforms(img.shape[2:])
@@ -157,22 +150,6 @@ def test_time_augmentation(img, predict_model, num, shape, augmentation_params):
     return pred
 
 
-
-# fancy PCA
-U = np.array([[-0.60,0.55,0.58],
-    [-0.60,0.17,-0.77],
-    [-0.53,-0.82,0.23]],dtype = np.float32);
-EV = np.array([1.1,0.16,0.067],dtype = np.float32);
-
-def augment_color(img, sigma=0.3):
-    if sigma<=0.0:
-        return img;
-    color_vec = np.random.normal(0.0, sigma, 3)
-    alpha = color_vec.astype(np.float32) * EV
-    noise = np.dot(U, alpha.T)
-    return img + noise[:, np.newaxis, np.newaxis]
-
-
 def augment(image, label, augmentation_params):
     if augmentation_params['elastic']:
         [ image, label ] = elastic_transform(img, lbl, augmentation_params)
@@ -180,9 +157,8 @@ def augment(image, label, augmentation_params):
         [ image, label ] = perturb(img, lbl, augmentation_params)
     return [image, label]
 
-
-from scipy.ndimage.interpolation import map_coordinates
-from scipy.ndimage.filters import gaussian_filter
+# elastic deformation
+# if an elastic_warps_dir is provided at the augmentation_params it will use one of the warps stored there
 elastic_dir_contents = []
 def elastic_transform(image, label, augmentation_params, random_state=None):
     """Elastic deformation of images as described in [Simard2003]_.
@@ -222,8 +198,7 @@ def elastic_transform(image, label, augmentation_params, random_state=None):
     return [resimage, reslabel];
 
 
-
-
+# generate elastic warps in the elastic_warps_dir
 def generate_elastic_warps(times, alpha, sigma, elastic_warps_dir):    
     if not os.path.exists(elastic_warps_dir):
         os.makedirs(elastic_warps_dir)
@@ -246,6 +221,33 @@ def generate_elastic_warps(times, alpha, sigma, elastic_warps_dir):
         f.close()
 
 
+######################## OTHER STUFF NOT CURRENTLY NEEDED ########################
+
+
+def perturb_fixed(img, label, tform_augment, target_shape=None):
+    shape = img.shape[1:]
+    tform_centering = build_centering_transform(shape, target_shape)
+    tform_center, tform_uncenter = build_center_uncenter_transforms(shape)
+    tform_augment = tform_uncenter + tform_augment + tform_center # shift to center, augment, shift back (for the rotation/shearing)
+    img = fast_warp(img, tform_centering + tform_augment, output_shape=target_shape, mode='constant')
+    label = fast_warp(label, tform_centering + tform_augment, output_shape=target_shape, mode='constant')
+    return [img, label]
+
+# fancy PCA
+U = np.array([[-0.60,0.55,0.58],
+    [-0.60,0.17,-0.77],
+    [-0.53,-0.82,0.23]],dtype = np.float32);
+EV = np.array([1.1,0.16,0.067],dtype = np.float32);
+
+def augment_color(img, sigma=0.3):
+    if sigma<=0.0:
+        return img;
+    color_vec = np.random.normal(0.0, sigma, 3)
+    alpha = color_vec.astype(np.float32) * EV
+    noise = np.dot(U, alpha.T)
+    return img + noise[:, np.newaxis, np.newaxis]
+
+    
 
 def load_augment(fname, w, h, aug_params=no_augmentation_params,
                  transform=None, sigma=0.0, color_vec=None):

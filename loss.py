@@ -11,3 +11,8 @@ def dice(pred, tgt, ss=1):
 #     den = predeq.sum() + tgteq.sum()
 #     if den == 0: return -1
 #     return -2* (predeq*tgteq).sum()/den
+
+
+def squared_error():
+	import lasagne
+	return lasagne.objectives.squared_error(output, label_var).mean()
