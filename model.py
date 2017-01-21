@@ -80,6 +80,7 @@ def network(input_var, shape, version=0, filter_size=3, num_filters=8, depth=6, 
 
 
 def fill_network(net, network, num_filters=1, filter_size=3, drop=False, nonlinearity=lasagne.nonlinearities.sigmoid, convnonlinearity=lasagne.nonlinearities.rectify):
+    """perform extra convolutions with padd so the output is of the same size as input"""
     img_shape = None
     layers = lasagne.layers.get_all_layers(network)
     for l in layers:
@@ -116,7 +117,8 @@ def leaky_relu(x):
 
 
 def match_net_params(anet, net):    
-    for name in anet: 
+    """ Retrieve params of anet to and tranfer to net """
+    for name in anet:
         if name not in net: continue
         l = anet[name]
         if isinstance(l, lasagne.layers.Conv2DLayer) or isinstance(l, lasagne.layers.MaxPool2DLayer):

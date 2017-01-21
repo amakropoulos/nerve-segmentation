@@ -100,13 +100,13 @@ def train_model(version=0, train_dir = 'train', fold=1, num_folds=10, seed=1234)
     # loss function, regularization etc
     train_loss_function = getattr(L, c.train_loss)
     val_loss_function = getattr(L, c.val_loss)
-    train_loss = train_loss_function(utput, label_var)
+    train_loss = train_loss_function(output, label_var)
     val_loss = val_loss_function(output_det, label_var)
-    if regularization>0:
-         train_loss = train_loss + regularization*add_regularization(net['output'])
-    lr = theano.shared(lasagne.utils.floatX(learning_rate[0]))
+    if c.regularization>0:
+         train_loss = train_loss + c.regularization*add_regularization(net['output'])
+    lr = theano.shared(lasagne.utils.floatX(c.learning_rate[0]))
     # learning rate can be epoch-specific
-    lr_epoch = np.linspace(learning_rate[0], learning_rate[1], c.num_epochs)
+    lr_epoch = np.linspace(c.learning_rate[0], c.learning_rate[1], c.num_epochs)
     params = lasagne.layers.get_all_params(net['output'], trainable=True)
     updates = lasagne.updates.adam(train_loss, params, learning_rate=lr)
     val_acc = lasagne.objectives.binary_accuracy(output_det, label_var).mean()

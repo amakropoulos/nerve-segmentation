@@ -18,9 +18,9 @@ num_epochs = 100
 
 augment = True
 elastic = False
-alpha = 100
-sigma = 4
-elastic_warps_dir = 'augmentation-warps/100-4'
+alpha = 100  # params of deformation-based aug
+sigma = 4   # same
+elastic_warps_dir = ''  # precomputed warps if specified
 
 non_elastic = True
 shift = 10;
