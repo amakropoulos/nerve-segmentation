@@ -1,4 +1,4 @@
-modelversion = 1
+modelversion = 3
 depth = 6
 filters = 8
 filter_size = 3
