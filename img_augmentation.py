@@ -152,9 +152,9 @@ def test_time_augmentation(img, predict_model, num, shape, augmentation_params):
 
 def augment(image, label, augmentation_params):
     if augmentation_params['elastic']:
-        [ image, label ] = elastic_transform(img, lbl, augmentation_params)
+        [ image, label ] = elastic_transform(image, label, augmentation_params)
     if augmentation_params['non_elastic']:
-        [ image, label ] = perturb(img, lbl, augmentation_params)
+        [ image, label ] = perturb(image, label, augmentation_params)
     return [image, label]
 
 # elastic deformation

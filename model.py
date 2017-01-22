@@ -29,6 +29,10 @@ def network(input_var, shape, version=0, filter_size=3, num_filters=8, depth=6, 
 
     import sys;
     sys.setrecursionlimit(40000)
+
+    # default nonlinearities - change within model if needed
+    nonlinearity=lasagne.nonlinearities.sigmoid
+    convnonlinearity=lasagne.nonlinearities.rectify
         
     if version == 1: # segnet
         net['conv%d'%len(net)] = network = Conv2DLayer(network, num_filters=num_filters, filter_size=filter_size); network=bn(network) 
@@ -73,13 +77,13 @@ def network(input_var, shape, version=0, filter_size=3, num_filters=8, depth=6, 
             net['dec%d'%len(net)] = network = Conv2DLayer(network, num_filters=num_filters, filter_size=filter_size, pad='same'); network = bn(network)
             net['dec%d'%len(net)] = network = Conv2DLayer(network, num_filters=num_filters, filter_size=filter_size, pad='same'); network = bn(network)
     
-    net, network = fill_network(net, network, num_filters, filter_size, drop, nonlinearity)
+    net, network = fill_network(net, network, num_filters, filter_size, nonlinearity)
     if print_net: print_network(network)
     return net
 
 
 
-def fill_network(net, network, num_filters=1, filter_size=3, drop=False, nonlinearity=lasagne.nonlinearities.sigmoid, convnonlinearity=lasagne.nonlinearities.rectify):
+def fill_network(net, network, num_filters=1, filter_size=3, nonlinearity=lasagne.nonlinearities.sigmoid, convnonlinearity=lasagne.nonlinearities.rectify):
     """perform extra convolutions with padd so the output is of the same size as input"""
     img_shape = None
     layers = lasagne.layers.get_all_layers(network)

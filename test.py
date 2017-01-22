@@ -12,8 +12,9 @@ import argparse
 import glob
 import cv2
 from skimage import measure
+import img_augmentation as aug
 
-import config as c
+#import config as c
 import model
 import misc
 
@@ -40,19 +41,25 @@ def postprocess(pred, minsize=5000, dilations=2, sigma=5):
     return predthr
 
 
-def join_models_cv(version=0, results_dir='submit', minsize=5000):
+def join_models_cv(version=0, test_dir='test', results_dir='submit', minsize=5000):
+    c = misc.load_config(version)
+    
     start_time = time.clock()   
     print_dir = os.path.join(results_dir, 'v{}'.format(version))
     cv_dirs = [os.path.join(print_dir,o) for o in os.listdir(print_dir) if os.path.isdir(os.path.join(print_dir,o))]
     misc.sort_nicely(cv_dirs)
-    num_images = len(glob.glob(cv_dirs[0]+'/*.tif'))
     num_cvs = len(cv_dirs)
+    images = glob.glob(test_dir+'/*.tif')
+    num_images = len(images)
 
     premod = 0
-    for i in range(1,num_images+1):
+    for i in range(num_images):
+        img_name = images[i]
+        pred_name = os.path.splitext(os.path.basename(img_name))[0] +'_pred.tif'
+
         pred = None
         for d in range(num_cvs):
-            img_name = cv_dirs[d]+'/'+str(i)+'_pred.tif'
+            img_name = cv_dirs[d]+'/'+pred_name
             img = misc.load_image(img_name)
             if d == 0:
                 pred = img
@@ -61,8 +68,7 @@ def join_models_cv(version=0, results_dir='submit', minsize=5000):
         pred /= num_cvs
 
         pred = postprocess(pred, minsize=minsize)
-
-        fnpred = os.path.join(print_dir, str(i)+'_pred.tif')
+        fnpred = os.path.join(print_dir, pred_name)
         scipy.misc.imsave(fnpred, pred.reshape(c.height, c.width) * np.float32(255))
 
         mod = math.floor(i / num_images * 10) 
@@ -75,8 +81,12 @@ def join_models_cv(version=0, results_dir='submit', minsize=5000):
 
 
 
-def test_model(version=0, test_dir='test', results_dir='submit', fold=0, minsize=5000, tta_num=1, seed=1234):
+def test_model(version=1, test_dir='test', results_dir='submit', fold=0, minsize=5000, tta_num=1, seed=1234):
     start_time = time.clock()   
+
+    # load model config 
+    c = misc.load_config(version)
+
     shape = (1, 1, c.height, c.width)
     orig_shape = shape
     if c.resize:        
@@ -87,10 +97,8 @@ def test_model(version=0, test_dir='test', results_dir='submit', fold=0, minsize
     input_var = T.tensor4('input')
     label_var = T.tensor4('label')
 
-    # load model config 
-    c = misc.load_config(version)
     net = model.network(input_var, netshape, filter_size=c.filter_size, version=c.modelversion, depth=c.depth, num_filters=c.filters, autoencoder=c.autoencoder, autoencoder_dropout=c.autoencoder_dropout)
-    
+
     output_det = lasagne.layers.get_output(net['output'], deterministic=True)
     predict_model = theano.function(inputs=[input_var], outputs=output_det)
 
@@ -99,7 +107,7 @@ def test_model(version=0, test_dir='test', results_dir='submit', fold=0, minsize
 
     print_idx = 0
     print_dir = os.path.join(results_dir, 'v{}'.format(version))
-    if cv>0:
+    if fold>0:
         print_dir = print_dir + "/fold{}".format(fold)
     else:
         print_dir = print_dir + "/seed{}".format(seed)
@@ -107,29 +115,27 @@ def test_model(version=0, test_dir='test', results_dir='submit', fold=0, minsize
     if not os.path.exists(print_dir):
         os.makedirs(print_dir)
 
-    num_images = len(glob.glob(test_dir+'/*.tif'))
-    premod = 0
+    images = glob.glob(test_dir+'/*.tif')
+    num_images = len(images)
 
-    for i in range(1,num_images+1):
-        img_name = test_dir+'/'+str(i)+'.tif'
-        fnpred = os.path.join(print_dir, str(i)+'_pred.tif')
+    premod = 0
+    for i in range(num_images):
+        img_name = images[i]
+        fnpred = os.path.join(print_dir, os.path.splitext(os.path.basename(img_name))[0] +'_pred.tif')
 
         if not os.path.exists(fnpred):
             img = misc.load_image(img_name)
-
-            if c,resize:
+            if c.resize:
                 img = cv2.resize(img[0], (shape[3], shape[2]), interpolation=cv2.INTER_CUBIC).reshape(shape)
             else:
                 img = img.reshape(shape)
 
             if tta_num>1:
-                pred = aug.test_time_augmentation(img, predict_model, tta_num, orig_shape)
+                pred = aug.test_time_augmentation(img, predict_model, tta_num, orig_shape, c.aug_params)
             else:
                 pred = predict_model(img)
-                if resize:
+                if c.resize:
                     pred = cv2.resize(pred[0][0], (orig_shape[3], orig_shape[2]), interpolation=cv2.INTER_LINEAR).reshape(orig_shape)
-
-            fnpred = os.path.join(print_dir, str(i)+'_pred.tif')
             scipy.misc.imsave(fnpred, pred.reshape(c.height, c.width) * np.float32(255))
 
         mod = math.floor(i / num_images * 10) 
@@ -156,7 +162,7 @@ def main():
     parser.add_argument("--join-only", dest="join_only",  help="join_only", action='store_true')
     options = parser.parse_args()
 
-    version = float(options.version)
+    version = int(options.version)
     cv = int(options.cv)
     fold = int(options.fold)
     results_dir = options.results
@@ -181,7 +187,7 @@ def main():
                 test_model(version, test_dir=test_dir, results_dir=results_dir, fold=fold, tta_num=tta, seed=seed)
 
     if join or join_only:
-        join_models_cv(version, results_dir=results_dir, minsize=minsize)
+        join_models_cv(version, test_dir, results_dir=results_dir, minsize=minsize)
 
 
 if __name__ == '__main__':

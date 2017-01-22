@@ -5,8 +5,10 @@ filter_size = 3
 regularization = 0
 resize = 0
 learning_rate = [3e-3, 3e-3]
-autoencoder=False
-autoencoder_dropout=0.3
+
+autoencoder = False
+autoencoder_dropout = 0.3
+pretrain = None
 
 train_loss = 'dice'
 val_loss = 'dice'
@@ -27,14 +29,5 @@ shift = 10;
 rotation = 10;
 shear = 2;
 scale = 0;
-color_noise = 0;
-crop = None
 flip = False
 stretch = True
-
-
-# data_based = False
-# warps_dir = 'warps/pass'
-
-# rotation = 5;
-# flip = True

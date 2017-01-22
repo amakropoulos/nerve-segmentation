@@ -1,14 +1,14 @@
 import scipy.misc
 import numpy as np
 import glob
-import config as c
+import config_default as c
 import pickle
 import os.path
 import re
 import math
 import img_augmentation as aug
 import gzip
-import skimage
+#import skimage
 import cv2
 
 
@@ -122,19 +122,26 @@ def sort_nicely(l):
 
 # load config file
 def load_config(version):
-    model_config = params_dir+"/v"+version+"/config.py"
+    import importlib
+    import sys
+    model_config = params_dir+"/v"+str(version)+"/config.py"
     # merge default and model config
-    import config.default.py as c
-    c2 = getattr(__import__(model_config))
+    global c
+    import config_default as c
+    sys.path.append(os.path.dirname(model_config))
+    mname = os.path.splitext(os.path.basename(model_config))[0]
+    c2 = importlib.import_module(mname)
     c.__dict__.update(c2.__dict__)
     c.aug_params = {
-        'use': c.augment
+        'use': c.augment,
+        'non_elastic': c.non_elastic,
         'zoom_range': (1/(1+c.scale), 1+c.scale),
         'rotation_range': (-c.rotation, c.rotation),
         'shear_range': (-c.shear, c.shear),
         'translation_range': (-c.shift, c.shift),
         'do_flip': c.flip,
         'allow_stretch': c.stretch,
+        'elastic': c.elastic,
         'elastic_warps_dir':c.elastic_warps_dir,
         'alpha': c.alpha,
         'sigma': c.sigma,
@@ -143,14 +150,15 @@ def load_config(version):
 
 
 def get_params_dir(version, fold=0, seed=1234):
+    suffix=""
     if fold > 0:
-        suffix ="{}/fold{}".format(suffix, fold)
+        suffix ="/fold{}".format(fold)
     else:
-        suffix ="{}/seed{}".format(suffix, seed)
-    return os.path.join(c.params_dir, 'v{}{}'.format(version, suffix))
+        suffix ="/seed{}".format(seed)
+    return os.path.join(params_dir, 'v{}{}'.format(version, suffix))
 
 
-def resume(model = None, version, fold=0, seed=1234):
+def resume(version=0, model = None,  fold=0, seed=1234):
     epoch = -1
     batch = 0
     fn = get_params_dir(version, fold=fold, seed=seed)+'/checkpoint.pickle'

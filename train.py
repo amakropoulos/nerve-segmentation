@@ -38,13 +38,12 @@ def add_regularization(network):
 
 
 # load batch and apply augmentation
-def getbatch(inputs, targets, shape, batchsize, aug_params, shuffle=False, seed=-1, init_batch=0, augment=False, resize=0):
+def getbatch(inputs, targets, shape, batchsize, aug_params, shuffle=False, seed=-1, init_batch=0, resize=0):
     indices = np.arange(len(inputs))
     if shuffle:
         if seed>=0: 
             np.random.seed(seed)
         np.random.shuffle(indices)
-
     Xs = np.zeros((batchsize, 1, shape[2], shape[3]), dtype='float32')
     ys = np.zeros((batchsize, 1, shape[2], shape[3]), dtype='float32')
     d=0
@@ -56,7 +55,7 @@ def getbatch(inputs, targets, shape, batchsize, aug_params, shuffle=False, seed=
         lbl = misc.load_image(targets[i])
         if aug_params["use"]:
             [ image, label ] = aug.augment(img, lbl, aug_params)
-
+            # scipy.misc.imsave(str(i)+'_aug.tif', image.reshape(shape[2], shape[3]) * np.float32(255))
         if resize:
             img = cv2.resize(img[0], (shape[3], shape[2]), interpolation=cv2.INTER_CUBIC).reshape(shape[1:])
             lbl = cv2.resize(lbl[0], (shape[3], shape[2]), interpolation=cv2.INTER_NEAREST).reshape(shape[1:])
@@ -70,7 +69,7 @@ def getbatch(inputs, targets, shape, batchsize, aug_params, shuffle=False, seed=
         yield Xs[0:d,:,:,:], ys[0:d,:,:,:]
 
 # train the model
-def train_model(version=0, train_dir = 'train', fold=1, num_folds=10, seed=1234):
+def train_model(version=1, train_dir = 'train', fold=1, num_folds=10, seed=1234):
     # completed?
     if misc.completed(version, fold, seed): return;
 
@@ -88,7 +87,7 @@ def train_model(version=0, train_dir = 'train', fold=1, num_folds=10, seed=1234)
     print("Loading data..")
     start_time = time.clock()   
     X_train, y_train, X_val, y_val = misc.load_data(val_pct=1/num_folds, datadir=train_dir, fold=fold, seed=seed)
-    print("took " + str(time.clock()-start_time )+"s")
+    print("took " + str(time.clock()-start_time )+"s\n")
 
     # build network
     input_var = T.tensor4('input')
@@ -105,6 +104,7 @@ def train_model(version=0, train_dir = 'train', fold=1, num_folds=10, seed=1234)
     if c.regularization>0:
          train_loss = train_loss + c.regularization*add_regularization(net['output'])
     lr = theano.shared(lasagne.utils.floatX(c.learning_rate[0]))
+
     # learning rate can be epoch-specific
     lr_epoch = np.linspace(c.learning_rate[0], c.learning_rate[1], c.num_epochs)
     params = lasagne.layers.get_all_params(net['output'], trainable=True)
@@ -123,16 +123,15 @@ def train_model(version=0, train_dir = 'train', fold=1, num_folds=10, seed=1234)
     num_train_batches = len(X_train) // c.batch_size
     num_val_batches = len(X_val) // c.batch_size
 
-
     # resume from epoch, batch
     print("Starting training...")
     [init_epoch, init_batch, mve, train_error, val_error, val_accuracy] = misc.resume(version, net['output'], fold=fold, seed=seed)
-    if c.pretrain!=0 and init_epoch == 0 and init_batch == 0:
+    if c.pretrain is not None and init_epoch == 0 and init_batch == 0:
         print("load params from network: "+str(c.pretrain))
         prenet =  deepcopy(net)
         misc.load_last_params(prenet['output'], c.pretrain, best=True)
         model.match_net_params(anet, net)
-    print("init epoch: "+str(init_epoch+1) + " batch: "+str(init_batch) +" best result: " +str(mve))
+    print("init epoch: "+str(init_epoch) + " batch: "+str(init_batch) +" best result: " +str(mve))
 
     for epoch in range(init_epoch, c.num_epochs):
         if epoch > init_epoch:
@@ -142,13 +141,14 @@ def train_model(version=0, train_dir = 'train', fold=1, num_folds=10, seed=1234)
         train_err = 0
         train_batches = 0
         start_time = time.clock()
+        train_err = 0
         val_err = 0
         val_acc = 0
         val_batches = 0
-        
+
         # Training
         premod = 0
-        for batch in getbatch(X_train, y_train, shape, c.batch_size, c.aug_params, shuffle=True, seed=epoch, init_batch=init_batch, augment=augment, resize=resize):
+        for batch in getbatch(X_train, y_train, shape, c.batch_size, c.aug_params, shuffle=True, seed=epoch, init_batch=init_batch, resize=c.resize):
             inputs, targets = batch     
             train_err += train_fn(inputs, targets)
             # Save and print info every 10% of batches
@@ -158,13 +158,14 @@ def train_model(version=0, train_dir = 'train', fold=1, num_folds=10, seed=1234)
                 print(str(mod*10)+'%..',end="",flush=True)
                 misc.save_progress(net['output'], version, epoch, train_batches, fold=fold, seed=seed)
             premod = mod
+
         # Training error
         if train_batches:
             train_error[epoch] = train_err / train_batches
 
-        # Validation
+            # Validation
         premod = 0
-        for batch in getbatch(X_val, y_val, shape, c.batch_size, c.aug_params, shuffle=False, resize=resize):
+        for batch in getbatch(X_val, y_val, shape, c.batch_size, c.aug_params, shuffle=False, resize=c.resize):
             inputs, targets = batch
             err, acc = val_fn(inputs, targets)
             val_err += err
@@ -175,11 +176,12 @@ def train_model(version=0, train_dir = 'train', fold=1, num_folds=10, seed=1234)
             if mod > premod and mod > 0:
                 print(str(mod*10)+'%..',end="",flush=True)
             premod = mod
+
         # Validation error
         val_error[epoch] = val_err / val_batches
         val_accuracy[epoch] = val_acc / val_batches * 100
 
-        # Save parameters if epoch was best so far
+            # Save parameters if epoch was best so far
         if mve is None or val_error[epoch] < mve:
             mve = val_error[epoch]
             misc.save_params(net['output'], version, epoch, best=True, fold=fold, seed=seed)
@@ -191,15 +193,18 @@ def train_model(version=0, train_dir = 'train', fold=1, num_folds=10, seed=1234)
         print("  validation loss:\t\t{:.6f}\t{:.6f}\t\t\t\t{:.6f}".format(val_error[epoch], mve, val_error[epoch]/train_error[epoch] ), flush=True)
         print("  validation accuracy:\t\t{:.2f} %".format(val_accuracy[epoch]),flush=True)
 
-        misc.finish(version, mve, fold, seed)
+    misc.finish(version, mve, fold, seed)
 
 
 
 
 def main(): 
-    try:
-        print_GPU_memory()
-    except:
+    if theano.config.device == "gpu":
+        try:
+            print_GPU_memory()
+        except:
+            print("GPU used")
+    else:
         print("CPU used")
 
     parser = argparse.ArgumentParser()
