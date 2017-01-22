@@ -138,8 +138,7 @@ def train_model(version=1, train_dir = 'train', fold=1, num_folds=10, seed=1234)
             init_batch = 0
 
         lr.set_value(lasagne.utils.floatX(lr_epoch[epoch]))
-        train_err = 0
-        train_batches = 0
+        train_batches = init_batch
         start_time = time.clock()
         train_err = 0
         val_err = 0
@@ -147,7 +146,7 @@ def train_model(version=1, train_dir = 'train', fold=1, num_folds=10, seed=1234)
         val_batches = 0
 
         # Training
-        premod = 0
+        premod = math.floor(train_batches / num_train_batches * 10)
         for batch in getbatch(X_train, y_train, shape, c.batch_size, c.aug_params, shuffle=True, seed=epoch, init_batch=init_batch, resize=c.resize):
             inputs, targets = batch     
             train_err += train_fn(inputs, targets)
@@ -216,7 +215,7 @@ def main():
     parser.add_argument("-train", dest="train",  help="train", default="train")
     options = parser.parse_args()
 
-    version = int(options.version)
+    version = options.version
     seed = int(options.seed)
     cv = int(options.cv)
     cvinv = int(options.cvinv)

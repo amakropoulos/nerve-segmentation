@@ -43,7 +43,7 @@ def postprocess(pred, minsize=5000, dilations=2, sigma=5):
 
 def join_models_cv(version=0, test_dir='test', results_dir='submit', minsize=5000):
     c = misc.load_config(version)
-    
+
     start_time = time.clock()   
     print_dir = os.path.join(results_dir, 'v{}'.format(version))
     cv_dirs = [os.path.join(print_dir,o) for o in os.listdir(print_dir) if os.path.isdir(os.path.join(print_dir,o))]
@@ -162,7 +162,7 @@ def main():
     parser.add_argument("--join-only", dest="join_only",  help="join_only", action='store_true')
     options = parser.parse_args()
 
-    version = int(options.version)
+    version = options.version
     cv = int(options.cv)
     fold = int(options.fold)
     results_dir = options.results

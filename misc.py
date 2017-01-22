@@ -120,18 +120,35 @@ def sort_nicely(l):
 ######################## LOAD/SAVE RESULTS METHODS ########################
 
 
+def get_params_dir(version, fold=0, seed=1234):
+    suffix=""
+    if fold > 0:
+        suffix ="/fold{}".format(fold)
+    else:
+        suffix ="/seed{}".format(seed)
+    return os.path.join(params_dir, '{}{}'.format(version, suffix))
+
+
 # load config file
 def load_config(version):
-    import importlib
-    import sys
-    model_config = params_dir+"/v"+str(version)+"/config.py"
-    # merge default and model config
+    # load default config
     global c
     import config_default as c
-    sys.path.append(os.path.dirname(model_config))
-    mname = os.path.splitext(os.path.basename(model_config))[0]
-    c2 = importlib.import_module(mname)
-    c.__dict__.update(c2.__dict__)
+
+    # merge default and model config
+    model_config = params_dir+"/"+str(version)+"/config.py"
+    if os.path.exists(model_config):
+        import importlib
+        import sys
+        sys.path.append(os.path.dirname(model_config))
+        mname = os.path.splitext(os.path.basename(model_config))[0]
+        c2 = importlib.import_module(mname)
+        c.__dict__.update(c2.__dict__)
+    else:
+        import warnings
+        warnings.warn("using default parameters")
+
+    # params for augmentation
     c.aug_params = {
         'use': c.augment,
         'non_elastic': c.non_elastic,
@@ -147,16 +164,6 @@ def load_config(version):
         'sigma': c.sigma,
     }
     return c
-
-
-def get_params_dir(version, fold=0, seed=1234):
-    suffix=""
-    if fold > 0:
-        suffix ="/fold{}".format(fold)
-    else:
-        suffix ="/seed{}".format(seed)
-    return os.path.join(params_dir, 'v{}{}'.format(version, suffix))
-
 
 def resume(version=0, model = None,  fold=0, seed=1234):
     epoch = -1
