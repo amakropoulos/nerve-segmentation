@@ -45,17 +45,17 @@ def join_models_cv(version=0, test_dir='test', results_dir='submit', minsize=500
     c = misc.load_config(version)
 
     start_time = time.clock()   
-    print_dir = os.path.join(results_dir, 'v{}'.format(version))
+    print_dir = os.path.join(results_dir, '{}'.format(version))
     cv_dirs = [os.path.join(print_dir,o) for o in os.listdir(print_dir) if os.path.isdir(os.path.join(print_dir,o))]
     misc.sort_nicely(cv_dirs)
     num_cvs = len(cv_dirs)
-    images = glob.glob(test_dir+'/*.tif')
+    images = glob.glob(test_dir+'/*'+c.image_ext)
     num_images = len(images)
 
     premod = 0
     for i in range(num_images):
         img_name = images[i]
-        pred_name = os.path.splitext(os.path.basename(img_name))[0] +'_pred.tif'
+        pred_name = os.path.splitext(os.path.basename(img_name))[0] + c.image_ext
 
         pred = None
         for d in range(num_cvs):
@@ -106,7 +106,7 @@ def test_model(version=1, test_dir='test', results_dir='submit', fold=0, minsize
     misc.load_last_params(net['output'], version, best=True, fold=fold, seed=seed)
 
     print_idx = 0
-    print_dir = os.path.join(results_dir, 'v{}'.format(version))
+    print_dir = os.path.join(results_dir, '{}'.format(version))
     if fold>0:
         print_dir = print_dir + "/fold{}".format(fold)
     else:
@@ -115,13 +115,13 @@ def test_model(version=1, test_dir='test', results_dir='submit', fold=0, minsize
     if not os.path.exists(print_dir):
         os.makedirs(print_dir)
 
-    images = glob.glob(test_dir+'/*.tif')
+    images = glob.glob(test_dir+'/*'+c.image_ext)
     num_images = len(images)
 
     premod = 0
     for i in range(num_images):
         img_name = images[i]
-        fnpred = os.path.join(print_dir, os.path.splitext(os.path.basename(img_name))[0] +'_pred.tif')
+        fnpred = os.path.join(print_dir, os.path.splitext(os.path.basename(img_name))[0] +'_pred'+c.image_ext)
 
         if not os.path.exists(fnpred):
             img = misc.load_image(img_name)

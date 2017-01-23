@@ -17,7 +17,9 @@ no_augmentation_params = {
     'allow_stretch': False,
 }
 
-def fast_warp(img, tf, output_shape=None, mode='constant', order=0):
+interpolation_order=1
+
+def fast_warp(img, tf, output_shape=None, mode='constant', order=interpolation_order):
     """
     This wrapper function is faster than skimage.transform.warp
     """
@@ -103,15 +105,19 @@ def random_perturbation_transform(augmentation_params, rng=np.random):
     return build_augmentation_transform((zoom_x, zoom_y), rotation, shear, translation, flip)
 
 # do the augmentation
-# if rng is None, it can be used for test-time augmentation
+# if rng is None, it can be used for fixed augmentation according to the parameters
 def perturb(img, label, augmentation_params, target_shape=None, rng=np.random):
     shape = img.shape[1:]
     tform_centering = build_centering_transform(shape, target_shape)
     tform_center, tform_uncenter = build_center_uncenter_transforms(shape)
-    tform_augment = random_perturbation_transform(augmentation_params, rng=rng)
+    if rng is not None:
+        tform_augment = random_perturbation_transform(augmentation_params, rng=rng)
     tform_augment = tform_uncenter + tform_augment + tform_center # shift to center, augment, shift back (for the rotation/shearing)
     img = fast_warp(img, tform_centering + tform_augment, output_shape=target_shape, mode='constant')
-    label = fast_warp(label, tform_centering + tform_augment, output_shape=target_shape, mode='constant')
+    label_order=0
+    if augmentation_params["autoencoder"]:
+        label_order=interpolation_order
+    label = fast_warp(label, tform_centering + tform_augment, output_shape=target_shape, mode='constant',order=label_order)
     return [img, label]
 
 # augmentation at test time
@@ -192,9 +198,12 @@ def elastic_transform(image, label, augmentation_params, random_state=None):
     #return map_coordinates(image, indices, order=1).reshape(shape)
     resimage = np.zeros_like(image);
     reslabel = np.zeros_like(label);
+    label_order=0
+    if augmentation_params["autoencoder"]:
+        label_order=interpolation_order
     for i in range(image.shape[0]):
-        resimage[i] = map_coordinates(image[i], indices, order=1).reshape(shape)
-        reslabel[i] = map_coordinates(label[i], indices, order=1, mode='nearest').reshape(shape)
+        resimage[i] = map_coordinates(image[i], indices, order=interpolation_order).reshape(shape)
+        reslabel[i] = map_coordinates(label[i], indices, order=label_order).reshape(shape)
     return [resimage, reslabel];
 
 
@@ -224,14 +233,6 @@ def generate_elastic_warps(times, alpha, sigma, elastic_warps_dir):
 ######################## OTHER STUFF NOT CURRENTLY NEEDED ########################
 
 
-def perturb_fixed(img, label, tform_augment, target_shape=None):
-    shape = img.shape[1:]
-    tform_centering = build_centering_transform(shape, target_shape)
-    tform_center, tform_uncenter = build_center_uncenter_transforms(shape)
-    tform_augment = tform_uncenter + tform_augment + tform_center # shift to center, augment, shift back (for the rotation/shearing)
-    img = fast_warp(img, tform_centering + tform_augment, output_shape=target_shape, mode='constant')
-    label = fast_warp(label, tform_centering + tform_augment, output_shape=target_shape, mode='constant')
-    return [img, label]
 
 # fancy PCA
 U = np.array([[-0.60,0.55,0.58],

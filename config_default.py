@@ -13,6 +13,7 @@ pretrain = None
 train_loss = 'dice'
 val_loss = 'dice'
 
+image_ext = '.tif'
 height = 420
 width = 580
 batch_size = 25
@@ -20,8 +21,8 @@ num_epochs = 100
 
 augment = True
 elastic = False
-alpha = 100  # params of deformation-based aug
-sigma = 4   # same
+alpha = 200  # params of deformation-based aug
+sigma = 20   # params of deformation-based aug
 elastic_warps_dir = ''  # precomputed warps if specified
 
 non_elastic = True

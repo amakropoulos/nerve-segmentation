@@ -47,6 +47,9 @@ def getbatch(inputs, targets, shape, batchsize, aug_params, shuffle=False, seed=
     Xs = np.zeros((batchsize, 1, shape[2], shape[3]), dtype='float32')
     ys = np.zeros((batchsize, 1, shape[2], shape[3]), dtype='float32')
     d=0
+    label_interpolation=cv2.INTER_NEAREST
+    if aug_params['autoencoder']:
+        label_interpolation=cv2.INTER_CUBIC
     for ii in range(init_batch*batchsize, len(inputs)):
         i = ii
         if shuffle:
@@ -55,10 +58,9 @@ def getbatch(inputs, targets, shape, batchsize, aug_params, shuffle=False, seed=
         lbl = misc.load_image(targets[i])
         if aug_params["use"]:
             [ image, label ] = aug.augment(img, lbl, aug_params)
-            # scipy.misc.imsave(str(i)+'_aug.tif', image.reshape(shape[2], shape[3]) * np.float32(255))
         if resize:
             img = cv2.resize(img[0], (shape[3], shape[2]), interpolation=cv2.INTER_CUBIC).reshape(shape[1:])
-            lbl = cv2.resize(lbl[0], (shape[3], shape[2]), interpolation=cv2.INTER_NEAREST).reshape(shape[1:])
+            lbl = cv2.resize(lbl[0], (shape[3], shape[2]), interpolation=label_interpolation).reshape(shape[1:])
         Xs[d] = img
         ys[d] = lbl
         d+=1
@@ -86,7 +88,7 @@ def train_model(version=1, train_dir = 'train', fold=1, num_folds=10, seed=1234)
     # load data
     print("Loading data..")
     start_time = time.clock()   
-    X_train, y_train, X_val, y_val = misc.load_data(val_pct=1/num_folds, datadir=train_dir, fold=fold, seed=seed)
+    X_train, y_train, X_val, y_val = misc.load_data(val_pct=1/num_folds, datadir=train_dir, fold=fold, seed=seed, autoencoder=c.autoencoder,image_ext=c.image_ext)
     print("took " + str(time.clock()-start_time )+"s\n")
 
     # build network

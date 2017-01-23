@@ -26,8 +26,11 @@ def load_image(filename):
 # load all images/labels from the data_dir and randomly split them into train/val
 # if only_names==True then only the names of the files are provided, 
 # otherwise the images are loaded as well
-def load_data(val_pct = 0.1, fold=0, seed = 1234, first=0, datadir='train', only_names=True):
-    mask_names = glob.glob(datadir+'/*_mask.tif')
+def load_data(val_pct = 0.1, fold=0, seed = 1234, first=0, datadir='train', only_names=True, autoencoder=False, image_ext='.tif'):
+    mask_suffix="_mask"
+    if autoencoder:
+        mask_suffix=""
+    mask_names = glob.glob(datadir+'/*'+mask_suffix+image_ext)
     subjects = uniq([i.split("/")[1].split("_")[0] for i in mask_names])
     if first>0:
         subjects = subjects[0:first]
@@ -64,7 +67,7 @@ def load_data(val_pct = 0.1, fold=0, seed = 1234, first=0, datadir='train', only
         mask_names = [];
         for i in range(d_num_subjects):
             s = subjects.pop(0)
-            mask_names = mask_names + glob.glob(datadir+'/'+s+'_*_mask.tif')
+            mask_names = mask_names + glob.glob(datadir+'/'+s+'_*'+mask_suffix+image_ext)
 
         num_images = len(mask_names) 
         if d==1:
@@ -76,7 +79,7 @@ def load_data(val_pct = 0.1, fold=0, seed = 1234, first=0, datadir='train', only
             ys[d] = {}
             ind=0
             for mask_name in mask_names:
-                Xs[d][ind] = mask_name.replace("_mask", "")
+                Xs[d][ind] = mask_name.replace(mask_suffix, "")
                 ys[d][ind] = mask_name
                 ind = ind + 1
         else:
@@ -84,7 +87,7 @@ def load_data(val_pct = 0.1, fold=0, seed = 1234, first=0, datadir='train', only
             ys[d] = np.zeros((num_images, 1, c.height, c.width), dtype='float32')
             ind=0
             for mask_name in mask_names:
-                image_name = mask_name.replace("_mask", "")
+                image_name = mask_name.replace(mask_suffix, "")
                 image = load_image(image_name)
                 mask = load_image(mask_name)
                 Xs[d][ind] = image
@@ -162,6 +165,7 @@ def load_config(version):
         'elastic_warps_dir':c.elastic_warps_dir,
         'alpha': c.alpha,
         'sigma': c.sigma,
+        'autoencoder':c.autoencoder
     }
     return c
 
