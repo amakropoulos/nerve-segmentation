@@ -41,12 +41,21 @@ def postprocess(pred, minsize=5000, dilations=2, sigma=5):
     return predthr
 
 
-def join_models_cv(version=0, test_dir='test', results_dir='submit', minsize=5000):
+def join_models_cv(version=0, test_dir='test', results_dir='submit', seed=1234, minsize=5000):
     c = misc.load_config(version)
 
     start_time = time.clock()   
     print_dir = os.path.join(results_dir, '{}'.format(version))
-    cv_dirs = [os.path.join(print_dir,o) for o in os.listdir(print_dir) if os.path.isdir(os.path.join(print_dir,o))]
+    join_dirs = print_dir+"/fold*seed"+str(seed)
+    if seed == "*":
+        join_dir = print_dir+"/joined"
+    else:
+        join_dir = print_dir+"/joined_seed"+str(seed)
+    if not os.path.exists(join_dir):
+        os.makedirs(join_dir)
+
+    cv_dirs = [o for o in glob.glob(join_dirs) if os.path.isdir(o)]
+    print(cv_dirs)
     misc.sort_nicely(cv_dirs)
     num_cvs = len(cv_dirs)
     images = glob.glob(test_dir+'/*'+c.image_ext)
@@ -55,7 +64,7 @@ def join_models_cv(version=0, test_dir='test', results_dir='submit', minsize=500
     premod = 0
     for i in range(num_images):
         img_name = images[i]
-        pred_name = os.path.splitext(os.path.basename(img_name))[0] + c.image_ext
+        pred_name = os.path.splitext(os.path.basename(img_name))[0] + "_pred" + c.image_ext
 
         pred = None
         for d in range(num_cvs):
@@ -68,7 +77,7 @@ def join_models_cv(version=0, test_dir='test', results_dir='submit', minsize=500
         pred /= num_cvs
 
         pred = postprocess(pred, minsize=minsize)
-        fnpred = os.path.join(print_dir, pred_name)
+        fnpred = os.path.join(join_dir, pred_name)
         scipy.misc.imsave(fnpred, pred.reshape(c.height, c.width) * np.float32(255))
 
         mod = math.floor(i / num_images * 10) 
@@ -81,8 +90,12 @@ def join_models_cv(version=0, test_dir='test', results_dir='submit', minsize=500
 
 
 
-def test_model(version=1, test_dir='test', results_dir='submit', fold=0, minsize=5000, tta_num=1, seed=1234):
-    start_time = time.clock()   
+def test_model(version=1, test_dir='test', results_dir='submit', fold=1, num_folds=10, minsize=5000, tta_num=1, seed=1234):  
+    folddir = misc.get_fold_dir(version, fold, num_folds, seed)
+    print_dir = folddir.replace(misc.params_dir+"/", results_dir+"/")
+    print("testing cv fold "+str(fold)+" of "+str(num_folds)+" (dir: "+print_dir+")\n")
+
+    start_time = time.clock() 
 
     # load model config 
     c = misc.load_config(version)
@@ -103,14 +116,9 @@ def test_model(version=1, test_dir='test', results_dir='submit', fold=0, minsize
     predict_model = theano.function(inputs=[input_var], outputs=output_det)
 
     # load best params
-    misc.load_last_params(net['output'], version, best=True, fold=fold, seed=seed)
+    misc.load_last_params(net['output'], folddir, best=True)
 
     print_idx = 0
-    print_dir = os.path.join(results_dir, '{}'.format(version))
-    if fold>0:
-        print_dir = print_dir + "/fold{}".format(fold)
-    else:
-        print_dir = print_dir + "/seed{}".format(seed)
 
     if not os.path.exists(print_dir):
         os.makedirs(print_dir)
@@ -149,7 +157,7 @@ def test_model(version=1, test_dir='test', results_dir='submit', fold=0, minsize
 def main(): 
     parser = argparse.ArgumentParser()
     parser.add_argument("-v", "--version", dest="version",  help="version", default=0.0)
-    parser.add_argument("-cv", dest="cv",  help="cv", default=0) 
+    parser.add_argument("-cv", dest="cv",  help="cv", default=10) 
     parser.add_argument("-fold", dest="fold",  help="fold", default=0)  
     parser.add_argument("-seed", dest="seed",  help="seed", default=1234)
 
@@ -159,7 +167,7 @@ def main():
     parser.add_argument("-ms", "-minsize", dest="minsize",  help="minsize", default=5000) 
     parser.add_argument("-tta", "-tta", dest="tta",  help="tta", default=1) 
     parser.add_argument("--join", dest="join",  help="join", action='store_true')
-    parser.add_argument("--join-only", dest="join_only",  help="join_only", action='store_true')
+    parser.add_argument("--join-all", dest="join_all",  help="join_all", action='store_true')
     options = parser.parse_args()
 
     version = options.version
@@ -171,23 +179,30 @@ def main():
     tta = int(options.tta)
     seed = int(options.seed)
     join = int(options.join)
-    join_only = int(options.join_only)
+    join_all = int(options.join_all)
     
     print("Arguments:")
     print("----------")
     print(options)
     print()
 
-    if not join_only:
-        if cv<=0:
-            test_model(version, test_dir=test_dir, results_dir=results_dir, fold=fold, tta_num=tta, seed=seed)
-        else:
-            for fold in range(1,cv+1):
-                print("cv fold "+str(fold)+"\n")
-                test_model(version, test_dir=test_dir, results_dir=results_dir, fold=fold, tta_num=tta, seed=seed)
+    if not join_all:
+        num_folds = cv
+        ifold = 1
+        lfold = num_folds+1
+        step = 1
 
-    if join or join_only:
-        join_models_cv(version, test_dir, results_dir=results_dir, minsize=minsize)
+        if fold > 0:
+            ifold = fold
+            lfold = fold+1
+
+        for fold in range(ifold,lfold,step):
+                test_model(version, test_dir=test_dir, results_dir=results_dir, fold=fold, num_folds=num_folds, tta_num=tta, seed=seed)
+
+    if join or join_all:
+        if join_all:
+            seed='*'
+        join_models_cv(version, test_dir, results_dir=results_dir, seed=seed, minsize=minsize)
 
 
 if __name__ == '__main__':

@@ -72,8 +72,11 @@ def getbatch(inputs, targets, shape, batchsize, aug_params, shuffle=False, seed=
 
 # train the model
 def train_model(version=1, train_dir = 'train', fold=1, num_folds=10, seed=1234):
+    folddir = misc.get_fold_dir(version, fold, num_folds, seed)
+    print("training cv fold "+str(fold)+" of "+str(num_folds)+" (dir: "+folddir+")\n")
+
     # completed?
-    if misc.completed(version, fold, seed): return;
+    if misc.completed(folddir): return;
 
     # load model config 
     c = misc.load_config(version)
@@ -88,7 +91,7 @@ def train_model(version=1, train_dir = 'train', fold=1, num_folds=10, seed=1234)
     # load data
     print("Loading data..")
     start_time = time.clock()   
-    X_train, y_train, X_val, y_val = misc.load_data(val_pct=1/num_folds, datadir=train_dir, fold=fold, seed=seed, autoencoder=c.autoencoder,image_ext=c.image_ext)
+    X_train, y_train, X_val, y_val = misc.load_data(fold=fold, num_folds=num_folds, datadir=train_dir,  seed=seed, autoencoder=c.autoencoder, image_ext=c.image_ext)
     print("took " + str(time.clock()-start_time )+"s\n")
 
     # build network
@@ -127,7 +130,7 @@ def train_model(version=1, train_dir = 'train', fold=1, num_folds=10, seed=1234)
 
     # resume from epoch, batch
     print("Starting training...")
-    [init_epoch, init_batch, mve, train_error, val_error, val_accuracy] = misc.resume(version, net['output'], fold=fold, seed=seed)
+    [init_epoch, init_batch, mve, train_error, val_error, val_accuracy] = misc.resume(net['output'], folddir)
     if c.pretrain is not None and init_epoch == 0 and init_batch == 0:
         print("load params from network: "+str(c.pretrain))
         prenet =  deepcopy(net)
@@ -157,7 +160,7 @@ def train_model(version=1, train_dir = 'train', fold=1, num_folds=10, seed=1234)
             mod = math.floor(train_batches / num_train_batches * 10) 
             if mod > premod and mod > 0:
                 print(str(mod*10)+'%..',end="",flush=True)
-                misc.save_progress(net['output'], version, epoch, train_batches, fold=fold, seed=seed)
+                misc.save_progress(net['output'], epoch, train_batches, folddir)
             premod = mod
 
         # Training error
@@ -185,16 +188,16 @@ def train_model(version=1, train_dir = 'train', fold=1, num_folds=10, seed=1234)
             # Save parameters if epoch was best so far
         if mve is None or val_error[epoch] < mve:
             mve = val_error[epoch]
-            misc.save_params(net['output'], version, epoch, best=True, fold=fold, seed=seed)
+            misc.save_params(net['output'], epoch, folddir, best=True)
 
         # Print the results for this epoch
-        misc.save_results(version, mve, train_error, val_error, val_accuracy, fold=fold, seed=seed)
+        misc.save_results(mve, train_error, val_error, val_accuracy, folddir)
         print("Epoch {} of {} took {:.3f}s".format(epoch + 1, c.num_epochs, time.clock() - start_time),flush=True)
         print("  training loss:\t\t{:.6f}".format(train_error[epoch]),flush=True)
         print("  validation loss:\t\t{:.6f}\t{:.6f}\t\t\t\t{:.6f}".format(val_error[epoch], mve, val_error[epoch]/train_error[epoch] ), flush=True)
         print("  validation accuracy:\t\t{:.2f} %".format(val_accuracy[epoch]),flush=True)
 
-    misc.finish(version, mve, fold, seed)
+    misc.finish(mve, folddir)
 
 
 
@@ -210,8 +213,7 @@ def main():
 
     parser = argparse.ArgumentParser()
     parser.add_argument("-v", "--version", dest="version",  help="version", default=0.0)
-    parser.add_argument("-cv", dest="cv",  help="cv", default=0) 
-    parser.add_argument("-cvinv", dest="cvinv",  help="cvinv", default=0) 
+    parser.add_argument("-cv", dest="cv",  help="cv", default=10) 
     parser.add_argument("-fold", dest="fold",  help="fold", default=0) 
     parser.add_argument("-seed", dest="seed",  help="seed", default=1234)
     parser.add_argument("-train", dest="train",  help="train", default="train")
@@ -220,7 +222,6 @@ def main():
     version = options.version
     seed = int(options.seed)
     cv = int(options.cv)
-    cvinv = int(options.cvinv)
     fold = int(options.fold)
     train_dir = options.train
 
@@ -230,28 +231,17 @@ def main():
     print(options)
     print()
 
-    ifold = 0
-    lfold = 1
-    num_folds = 10
+    num_folds = cv
+    ifold = 1
+    lfold = num_folds+1
     step = 1
-
-    if cv > 0:
-        ifold = 1
-        lfold = cv+1
-        num_folds = lfold
-
-    if cvinv > 0:
-        ifold = cvinv
-        lfold = 0
-        step=-1
-        num_folds = ifold
 
     if fold > 0:
         ifold = fold
+        lfold = fold+1
 
     for fold in range(ifold, lfold, step):
-        print("cv fold "+str(fold)+"\n")
-        train_model(version = version, train_dir=train_dir, fold = fold, num_folds = num_folds, seed=seed)
+        train_model(version = version, train_dir = train_dir, fold = fold, num_folds = num_folds, seed=seed)
 
 
 if __name__ == '__main__':

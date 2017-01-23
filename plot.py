@@ -2,8 +2,9 @@ import argparse
 from matplotlib import pyplot
 import misc
 
-def plot_errors(version=0):
-    mve, train_error, val_error, val_accuracy = misc.load_results(version)
+def plot_errors(version=0, fold=1, num_folds=10, seed=1234):
+    folddir = misc.get_fold_dir(version, fold, num_folds, seed)
+    mve, train_error, val_error, val_accuracy = misc.load_results(folddir)
     train_loss = []
     for value in train_error.values(): train_loss.append(abs(float(value)))
     valid_loss = []
@@ -27,8 +28,18 @@ def plot_errors(version=0):
 
 
 def main(): 
-    parser.add_argument("-v", "--version", dest="version",  help="version", default=0.0)   
-    plot_errors(version)
+    parser.add_argument("-v", "--version", dest="version",  help="version", default=0.0)  
+    parser.add_argument("-cv", dest="cv",  help="cv", default=0) 
+    parser.add_argument("-fold", dest="fold",  help="fold", default=0)  
+    parser.add_argument("-seed", dest="seed",  help="seed", default=1234)
+
+    options = parser.parse_args()
+    version = options.version
+    seed = int(options.seed)
+    cv = int(options.cv)
+    fold = int(options.fold)
+
+    plot_errors(version, fold, cv, seed)
 
 
 if __name__ == '__main__':
