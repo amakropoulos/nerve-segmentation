@@ -32,4 +32,13 @@ Testing is performed with the test.py. Test.py has the same parameters as above 
 </td></tr><tr><td>-results [dir] : </td><td> results directory (default: submit)  
 </td></tr></table>
 
-The rest of the parameters can be viewed by running the test.py with the --help option.
+Additional parameters can be viewed by running the test.py with the --help option.
+
+### Configuration
+
+The config_default.py contains the default parameters used for training.  
+This can be overriden for the different experiments if required.  
+In order to setup a new experiment the user needs to:  
+- create a directory with the experiment name inside the "params" folder (e.g. params/unet-small)
+- write a config.py file inside the experiment directory (e.g. params/unet-small/config.py) with the parameters he wants overriden (e.g. depth=4). Parameters that are not specified retain their original values from the config_default.py
+- run the training/testing specifying the experiment as the version (e.g. python train.py -v unet-small )

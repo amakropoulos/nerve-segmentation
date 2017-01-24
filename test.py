@@ -14,34 +14,37 @@ import cv2
 from skimage import measure
 import img_augmentation as aug
 
-#import config as c
 import model
 import misc
 
 
-def postprocess(pred, minsize=5000, dilations=2, sigma=5):
-    predthr = (pred[0]>=0.5)
-
-    lcc = measure.label(predthr)
+def postprocess(pred, minsize=0, lccs_retained=0):
+    predthr = (pred>=0.5)
+    if minsize<=0 and lccs_retained<=0:
+        return predthr
+    lcc = measure.label(predthr[0])
     num_lccs = np.max(lcc)
-    if num_lccs>1:
-        bestlcc=-1
-        bestlccscore=-1
+    predthr = np.zeros(pred.shape)
+    if num_lccs>0:
+        lccimg=lcc.reshape(pred.shape)
+        scores=list()
         for l in range(num_lccs):
-            score = ((lcc == l+1)*pred).sum()
-            if score > bestlccscore:
-                bestlccscore=score
-                bestlcc = l+1
-        lcc=lcc.reshape(pred.shape)
-        predthr=(lcc==bestlcc)
-
-    if predthr.sum() <= minsize:
-        predthr = np.zeros(pred.shape)
-
+            clccimg=(lccimg==l+1)
+            if clccimg.sum() <= minsize:
+                continue
+            score = (clccimg*pred).sum()
+            scores.append((score,clccimg))
+        if len(scores) > 0:
+            scores = sorted(scores, key=lambda x: x[0], reverse=True)
+            num=len(scores)
+            if lccs_retained>0: 
+                num = min(num, lccs_retained)
+            for l in range(num):
+                predthr += scores[l][1]
     return predthr
 
 
-def join_models_cv(version=0, test_dir='test', results_dir='submit', seed=1234, minsize=5000):
+def join_models_cv(version=0, test_dir='test', results_dir='submit', seed=1234, minsize=0, lccs_retained=0):
     c = misc.load_config(version)
 
     start_time = time.clock()   
@@ -75,8 +78,7 @@ def join_models_cv(version=0, test_dir='test', results_dir='submit', seed=1234, 
             else:
                 pred += img
         pred /= num_cvs
-
-        pred = postprocess(pred, minsize=minsize)
+        pred = postprocess(pred, minsize=minsize, lccs_retained=lccs_retained)
         fnpred = os.path.join(join_dir, pred_name)
         scipy.misc.imsave(fnpred, pred.reshape(c.height, c.width) * np.float32(255))
 
@@ -90,7 +92,7 @@ def join_models_cv(version=0, test_dir='test', results_dir='submit', seed=1234, 
 
 
 
-def test_model(version=1, test_dir='test', results_dir='submit', fold=1, num_folds=10, minsize=5000, tta_num=1, seed=1234):  
+def test_model(version=1, test_dir='test', results_dir='submit', fold=1, num_folds=10, seed=1234, tta=1):  
     folddir = misc.get_fold_dir(version, fold, num_folds, seed)
     print_dir = folddir.replace(misc.params_dir+"/", results_dir+"/")
     print("testing cv fold "+str(fold)+" of "+str(num_folds)+" (dir: "+print_dir+")\n")
@@ -105,7 +107,7 @@ def test_model(version=1, test_dir='test', results_dir='submit', fold=1, num_fol
     if c.resize:        
         orig_shape = shape
         shape = (1, 1, round(c.height*c.resize), round(c.width*c.resize) ) 
-    netshape = (tta_num, shape[1], shape[2], shape[3])
+    netshape = (tta, shape[1], shape[2], shape[3])
 
     input_var = T.tensor4('input')
     label_var = T.tensor4('label')
@@ -138,8 +140,8 @@ def test_model(version=1, test_dir='test', results_dir='submit', fold=1, num_fol
             else:
                 img = img.reshape(shape)
 
-            if tta_num>1:
-                pred = aug.test_time_augmentation(img, predict_model, tta_num, orig_shape, c.aug_params)
+            if tta>1:
+                pred = aug.test_time_augmentation(img, predict_model, tta, orig_shape, c.aug_params)
             else:
                 pred = predict_model(img)
                 if c.resize:
@@ -163,11 +165,12 @@ def main():
 
     parser.add_argument("-results", dest="results",  help="results", default='submit')
     parser.add_argument("-test", dest="test",  help="test", default="test")
-
-    parser.add_argument("-ms", "-minsize", dest="minsize",  help="minsize", default=5000) 
-    parser.add_argument("-tta", "-tta", dest="tta",  help="tta", default=1) 
-    parser.add_argument("--join", dest="join",  help="join", action='store_true')
+    parser.add_argument("--join-cv", dest="join_cv",  help="join_cv", action='store_true')
     parser.add_argument("--join-all", dest="join_all",  help="join_all", action='store_true')
+
+    parser.add_argument("-tta", "-tta", dest="tta",  help="tta", default=1) 
+    parser.add_argument("-ms", "-minsize", dest="minsize",  help="minsize", default=0) 
+    parser.add_argument("-lccs", "-lccs", dest="lccs",  help="lccs retained", default=0) 
     options = parser.parse_args()
 
     version = options.version
@@ -175,11 +178,13 @@ def main():
     fold = int(options.fold)
     results_dir = options.results
     test_dir = options.test
-    minsize = int(options.minsize)
-    tta = int(options.tta)
     seed = int(options.seed)
-    join = int(options.join)
+    join_cv = int(options.join_cv)
     join_all = int(options.join_all)
+    tta = int(options.tta)
+    minsize = int(options.minsize)
+    lccs = int(options.lccs)
+
     
     print("Arguments:")
     print("----------")
@@ -197,12 +202,12 @@ def main():
             lfold = fold+1
 
         for fold in range(ifold,lfold,step):
-                test_model(version, test_dir=test_dir, results_dir=results_dir, fold=fold, num_folds=num_folds, tta_num=tta, seed=seed)
+                test_model(version, test_dir=test_dir, results_dir=results_dir, fold=fold, num_folds=num_folds, seed=seed, tta=tta)
 
-    if join or join_all:
+    if join_cv or join_all:
         if join_all:
             seed='*'
-        join_models_cv(version, test_dir, results_dir=results_dir, seed=seed, minsize=minsize)
+        join_models_cv(version, test_dir, results_dir=results_dir, seed=seed, minsize=minsize, lccs_retained=lccs)
 
 
 if __name__ == '__main__':
