@@ -31,7 +31,7 @@ regularization = 0
 resize = 0
 # starting/ending learning rate (this is linearly divided among the epochs)
 learning_rate = [3e-3, 3e-3]
-# pretrain model directory (params/*)
+# pretrain model version
 pretrain = None
 # train loss function
 train_loss = 'dice'

@@ -133,8 +133,9 @@ def train_model(version=1, train_dir = 'train', fold=1, num_folds=10, seed=1234)
     [init_epoch, init_batch, mve, train_error, val_error, val_accuracy] = misc.resume(net['output'], folddir)
     if c.pretrain is not None and init_epoch == 0 and init_batch == 0:
         print("load params from network: "+str(c.pretrain))
+        pretrain_folddir = misc.get_fold_dir(c.pretrain, fold, num_folds, seed)
         prenet =  deepcopy(net)
-        misc.load_last_params(prenet['output'], c.pretrain, best=True)
+        misc.load_last_params(prenet['output'], pretrain_folddir, best=True)
         model.match_net_params(anet, net)
     print("init epoch: "+str(init_epoch) + " batch: "+str(init_batch) +" best result: " +str(mve))
 
