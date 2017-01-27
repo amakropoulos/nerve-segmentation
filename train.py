@@ -219,7 +219,7 @@ def train_model(version=1, train_dir = 'train', fold=1, num_folds=10, seed=1234)
 
 
 def main(): 
-    if theano.config.device == "gpu":
+    if "gpu" in theano.config.device:
         try:
             print_GPU_memory()
         except:
