@@ -37,7 +37,10 @@ def load_data(fold = 1, num_folds = 10, seed = 1234, datadir = 'train', only_nam
 
     num_subjects = {}
     # validation subjects
-    num_subjects[0] = math.ceil(1/num_folds*len(subjects))
+    if num_folds <= 1:
+        num_subjects[0] = 0
+    else:
+        num_subjects[0] = math.ceil(1/num_folds*len(subjects))
     # train subjects
     num_subjects[1] = len(subjects) - num_subjects[0]
 

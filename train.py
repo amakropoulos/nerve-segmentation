@@ -126,17 +126,29 @@ def train_model(version=1, train_dir = 'train', fold=1, num_folds=10, seed=1234)
     init_epoch = 0
     init_batch = 0
     num_train_batches = len(X_train) // c.batch_size
-    num_val_batches = len(X_val) // c.batch_size
+    num_val_batches = 0
+    if X_val is not None:
+        num_val_batches = len(X_val) // c.batch_size
 
     # resume from epoch, batch
     print("Starting training...")
     [init_epoch, init_batch, mve, train_error, val_error, val_accuracy] = misc.resume(net['output'], folddir)
     if c.pretrain is not None and init_epoch == 0 and init_batch == 0:
-        print("load params from network: "+str(c.pretrain))
         pretrain_folddir = misc.get_fold_dir(c.pretrain, fold, num_folds, seed)
-        prenet =  deepcopy(net)
-        misc.load_last_params(prenet['output'], pretrain_folddir, best=True)
-        model.match_net_params(anet, net)
+        if not os.path.exists(pretrain_folddir):
+            pretrain_folddir = misc.get_fold_dir(c.pretrain, 1, 1, seed)
+            if not os.path.exists(pretrain_folddir):
+                pretrain_folddir = misc.get_fold_dir(c.pretrain, 1, 1, '*')
+        if os.path.exists(pretrain_folddir):
+            print("load params from network: "+str(c.pretrain)+" dir: "+pretrain_folddir)
+            prec = misc.load_config(c.pretrain)
+            prenet = model.network(input_var, shape, filter_size=prec.filter_size, version=prec.modelversion, depth=prec.depth, num_filters=prec.filters, autoencoder=prec.autoencoder, autoencoder_dropout=prec.autoencoder_dropout)
+            misc.load_last_params(prenet['output'], pretrain_folddir, best=True)
+            model.match_net_params(anet, net)
+        else:
+            print("no parameters found for pretraining!")
+            return
+
     print("init epoch: "+str(init_epoch) + " batch: "+str(init_batch) +" best result: " +str(mve))
 
     for epoch in range(init_epoch, c.num_epochs):
@@ -165,28 +177,31 @@ def train_model(version=1, train_dir = 'train', fold=1, num_folds=10, seed=1234)
             premod = mod
 
         # Training error
-        if train_batches:
-            train_error[epoch] = train_err / train_batches
+        train_error[epoch] = train_err / train_batches
 
-            # Validation
-        premod = 0
-        for batch in getbatch(X_val, y_val, shape, c.batch_size, c.aug_params, shuffle=False, resize=c.resize):
-            inputs, targets = batch
-            err, acc = val_fn(inputs, targets)
-            val_err += err
-            val_acc += acc
-            # Print info every 10% of batches
-            val_batches += 1
-            mod = math.floor(val_batches / num_val_batches * 10) 
-            if mod > premod and mod > 0:
-                print(str(mod*10)+'%..',end="",flush=True)
-            premod = mod
+        # Validation
+        if X_val is not None:
+            premod = 0
+            for batch in getbatch(X_val, y_val, shape, c.batch_size, c.aug_params, shuffle=False, resize=c.resize):
+                inputs, targets = batch
+                err, acc = val_fn(inputs, targets)
+                val_err += err
+                val_acc += acc
+                # Print info every 10% of batches
+                val_batches += 1
+                mod = math.floor(val_batches / num_val_batches * 10) 
+                if mod > premod and mod > 0:
+                    print(str(mod*10)+'%..',end="",flush=True)
+                premod = mod
 
-        # Validation error
-        val_error[epoch] = val_err / val_batches
-        val_accuracy[epoch] = val_acc / val_batches * 100
+            # Validation error
+            val_error[epoch] = val_err / val_batches
+            val_accuracy[epoch] = val_acc / val_batches * 100
+        else:
+            val_error[epoch] = train_error[epoch]
+            val_accuracy[epoch] = 0
 
-            # Save parameters if epoch was best so far
+        # Save parameters if epoch was best so far
         if mve is None or val_error[epoch] < mve:
             mve = val_error[epoch]
             misc.save_params(net['output'], epoch, folddir, best=True)

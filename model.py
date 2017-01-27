@@ -24,15 +24,16 @@ def network(input_var, shape, version=0, filter_size=3, num_filters=8, depth=6, 
     net = {}
     net['input'] = network = InputLayer(shape, input_var)
 
-    if autoencoder: 
-        network = lasagne.layers.dropout(network, autoencoder_dropout)
-
     import sys;
     sys.setrecursionlimit(40000)
 
     # default nonlinearities - change within model if needed
-    nonlinearity=lasagne.nonlinearities.sigmoid
     convnonlinearity=lasagne.nonlinearities.rectify
+    nonlinearity=lasagne.nonlinearities.sigmoid
+
+    if autoencoder: 
+        network = lasagne.layers.dropout(network, autoencoder_dropout)
+        nonlinearity = None
         
     if version == 1: # segnet
         net['conv%d'%len(net)] = network = Conv2DLayer(network, num_filters=num_filters, filter_size=filter_size); network=bn(network) 
@@ -111,15 +112,6 @@ def fill_network(net, network, num_filters=1, filter_size=3, nonlinearity=lasagn
 
 
 
-
-######################## OTHER STUFF NOT CURRENTLY NEEDED ########################
-
-def leaky_relu(x):
-    import theano.tensor as T 
-    return T.nnet.relu(x, alpha=1/3)
-
-
-
 def match_net_params(anet, net):    
     """ Retrieve params of anet to and tranfer to net """
     for name in anet:
@@ -128,3 +120,12 @@ def match_net_params(anet, net):
         if isinstance(l, lasagne.layers.Conv2DLayer) or isinstance(l, lasagne.layers.MaxPool2DLayer):
             netl = net[name]
             lasagne.layers.set_all_param_values(netl, lasagne.layers.get_all_param_values(l))
+
+
+######################## OTHER STUFF NOT CURRENTLY NEEDED ########################
+
+def leaky_relu(x):
+    import theano.tensor as T 
+    return T.nnet.relu(x, alpha=1/3)
+
+
